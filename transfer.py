@@ -1,13 +1,17 @@
 import os
 import time
 import requests
+import numpy as np
 from bs4 import BeautifulSoup
 from web3 import Web3, Account
 
 rpc_url = 'https://polygon-pokt.nodies.app'
 private_keys_file = 'accs.txt'
 send_to_file = 'send.txt'
-minimum_balance = 0.9 # кол-во матика остающегося на кошельке
+# Начальное и конечное значения для minimum_balance, а также шаг
+min_balance_start = 1.0  # минимальный баланс для отправки, начальное значение
+min_balance_end = 1.2  # минимальный баланс для отправки, конечное значение
+min_balance_step = 0.01  # минимальный баланс для отправки, шаг
 minimum_extra_balance = 0.5 # кол-во матика минимального для отправки на другой кошелек
 matic_token_contract_address = "0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0"
 
