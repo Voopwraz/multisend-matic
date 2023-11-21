@@ -3,49 +3,55 @@ from web3 import Web3
 import requests
 import time
 import random
+from decimal import Decimal
 
-# ваш токен API Polygon
-POLYGON_API_TOKEN = 'B9VZ4N445PXCQS5IK3WNRJWD82GKPUHPMB'
-
-# минимальный объем Matic в транзакции
-MINIMUM_MATIC_AMOUNT = 0.5
-
-# максимальное время ожидания статуса транзакции (в секундах)
-MAX_WAIT_TIME = 120
+POLYGON_API_TOKEN = 'you_api_polygon'
+MINIMUM_MATIC_AMOUNT = 0.5 # количество матика для минималньой отправки в транзакции
+MAX_WAIT_TIME = 120 # время проверки транзакции на отправку
+POLYGON_RPC = 'https://polygon-rpc.com' # rpc polygon
 
 def get_initial_balance(private_key):
-   w3 = Web3(Web3.HTTPProvider('https://polygon-rpc.com'))
+   w3 = Web3(Web3.HTTPProvider(POLYGON_RPC))
    account = w3.eth.account.from_key(private_key)
    balance = w3.eth.get_balance(account.address)
    print(f"Начальный баланс кошелька {account.address}: {w3.from_wei(balance, 'ether')} Matic")
 
-def send_transaction(private_key, to_address, amount, gas_price, minimum_balance, minimum_matic_amount):
-   w3 = Web3(Web3.HTTPProvider('https://polygon-rpc.com'))
+def send_transaction(private_key, to_address, gas_price, minimum_balance, minimum_matic_amount):
+   w3 = Web3(Web3.HTTPProvider(POLYGON_RPC))
    account = w3.eth.account.from_key(private_key)
+   
+   nonce = w3.eth.get_transaction_count(account.address)
+   nonce += 1
  
    balance = w3.eth.get_balance(account.address)
-   if balance < amount:
+   u = w3.from_wei(balance, 'ether')
+   p = Decimal(minimum_balance)  # Преобразовываем 'float' в 'decimal.Decimal'
+   t = u - p
+
+   if balance < w3.to_wei(t, 'ether'):
        print(f"Недостаточно средств для отправки транзакции с кошелька {account.address}")
        return
 
-   if amount < minimum_matic_amount:
+   if t < minimum_matic_amount:
        print(f"Объем отправляемого Matic меньше {minimum_matic_amount}. Транзакция отменена.")
        return
 
    nonce = w3.eth.get_transaction_count(account.address)
    gas_limit = 21000
    gas_price = max(gas_price, get_gas_price())
+    
+   print(f"Отправляется {t} Matic с кошелька {account.address} на адрес {to_address}")
  
    txn = {
        'nonce': nonce,
        'to': to_address,
-       'value': w3.to_wei(amount, 'ether'),
+       'value': w3.to_wei(t, 'ether'),
        'gas': gas_limit,
-       'gasPrice': gas_price
+       'gasPrice': gas_price,
+       'chainId': 137  
    }
 
-   # Проверяем баланс перед отправкой транзакции
-   remaining_balance = w3.eth.get_balance(account.address) - w3.to_wei(amount, 'ether')
+   remaining_balance = w3.eth.get_balance(account.address) - w3.to_wei(t, 'ether')
    remaining_matic = w3.from_wei(remaining_balance, 'ether')
 
    if remaining_matic < minimum_balance:
@@ -59,6 +65,8 @@ def send_transaction(private_key, to_address, amount, gas_price, minimum_balance
 
    start_time = time.time()
    while time.time() - start_time < MAX_WAIT_TIME:
+       time.sleep(40) # Задержка перед проверкой статуса транзакции
+       txn_receipt = w3.eth.get_transaction_receipt(txn_hash)
        if get_transaction_status(txn_hash):
            print(f"Транзакция {txn_hash} успешно подтверждена.")
            break
@@ -69,7 +77,7 @@ def send_transaction(private_key, to_address, amount, gas_price, minimum_balance
    return txn_hash
 
 def get_transaction_status(txn_hash):
-   w3 = Web3(Web3.HTTPProvider('https://polygon-rpc.com'))
+   w3 = Web3(Web3.HTTPProvider(POLYGON_RPC))
    txn_receipt = w3.eth.get_transaction_receipt(txn_hash)
    return txn_receipt['status'] == 1 if txn_receipt else False
 
@@ -98,16 +106,15 @@ def main():
 
   threads = int(input('Введите количество потоков (от 1 до 5): '))
 
-  MINIMUM_BALANCES = [round(random.uniform(1.0, 1.2), 3) for _ in range(len(private_keys))]
+  MINIMUM_BALANCES = [round(random.uniform(1.0, 1.2), 3) for _ in range(len(private_keys))] # количество матика остающегося на кошелька, ((от, до) шаг 3 - 0,001)
 
   for i in range(min(threads, len(private_keys))):
       private_key = private_keys[i]
       to_address = to_addresses[i]
-      amount = 1 # Укажите желаемое количество валюты Matic
       gas_price = get_gas_price()
 
       get_initial_balance(private_key)
-      threading.Thread(target=send_transaction, args=(private_key, to_address, amount, gas_price, MINIMUM_BALANCES[i], MINIMUM_MATIC_AMOUNT)).start()
+      threading.Thread(target=send_transaction, args=(private_key, to_address, gas_price, MINIMUM_BALANCES[i], MINIMUM_MATIC_AMOUNT)).start()
 
 if __name__ == '__main__':
    main()
