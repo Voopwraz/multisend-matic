@@ -4,11 +4,12 @@ import requests
 import time
 import random
 from decimal import Decimal
+from web3.exceptions import TransactionNotFound
 
-POLYGON_API_TOKEN = 'you_api_polygon'
+POLYGON_API_TOKEN = 'you_api_token'
 MINIMUM_MATIC_AMOUNT = 0.5 # количество матика для минималньой отправки в транзакции
 MAX_WAIT_TIME = 120 # время проверки транзакции на отправку
-POLYGON_RPC = 'https://polygon-rpc.com' # rpc polygon
+POLYGON_RPC = 'https://polygon.llamarpc.com' # rpc polygon
 
 def get_initial_balance(private_key):
    w3 = Web3(Web3.HTTPProvider(POLYGON_RPC))
@@ -17,64 +18,62 @@ def get_initial_balance(private_key):
    print(f"Начальный баланс кошелька {account.address}: {w3.from_wei(balance, 'ether')} Matic")
 
 def send_transaction(private_key, to_address, gas_price, minimum_balance, minimum_matic_amount):
-   w3 = Web3(Web3.HTTPProvider(POLYGON_RPC))
-   account = w3.eth.account.from_key(private_key)
-   
-   nonce = w3.eth.get_transaction_count(account.address)
-   nonce += 1
- 
-   balance = w3.eth.get_balance(account.address)
-   u = w3.from_wei(balance, 'ether')
-   p = Decimal(minimum_balance)  # Преобразовываем 'float' в 'decimal.Decimal'
-   t = u - p
+    w3 = Web3(Web3.HTTPProvider(POLYGON_RPC))
+    account = w3.eth.account.from_key(private_key)
 
-   if balance < w3.to_wei(t, 'ether'):
-       print(f"Недостаточно средств для отправки транзакции с кошелька {account.address}")
-       return
+    nonce = w3.eth.get_transaction_count(account.address)
+    nonce += 1
 
-   if t < minimum_matic_amount:
-       print(f"Объем отправляемого Matic меньше {minimum_matic_amount}. Транзакция отменена.")
-       return
+    balance = w3.eth.get_balance(account.address)
+    u = w3.from_wei(balance, 'ether')
+    p = Decimal(minimum_balance)
+    t = u - p
 
-   nonce = w3.eth.get_transaction_count(account.address)
-   gas_limit = 21000
-   gas_price = max(gas_price, get_gas_price())
-    
-   print(f"Отправляется {t} Matic с кошелька {account.address} на адрес {to_address}")
- 
-   txn = {
-       'nonce': nonce,
-       'to': to_address,
-       'value': w3.to_wei(t, 'ether'),
-       'gas': gas_limit,
-       'gasPrice': gas_price,
-       'chainId': 137  
-   }
+    if balance < w3.to_wei(t, 'ether'):
+        print(f"Недостаточно средств для отправки транзакции с кошелька {account.address}")
+        return
 
-   remaining_balance = w3.eth.get_balance(account.address) - w3.to_wei(t, 'ether')
-   remaining_matic = w3.from_wei(remaining_balance, 'ether')
+    if t < minimum_matic_amount:
+        print(f"Объем отправляемого Matic меньше {minimum_matic_amount}. Транзакция отменена.")
+        return
 
-   if remaining_matic < minimum_balance:
-       print(f"Оставшийся баланс меньше минимального значения {minimum_balance} Matic. Транзакция отменена.")
-       return
+    gas_price_wei = gas_price * 10**9
 
-   signed_txn = w3.eth.account.sign_transaction(txn, private_key)
-   txn_hash = w3.eth.send_raw_transaction(signed_txn.rawTransaction).hex()
- 
-   print(f"Отправлена транзакция с кошелька {account.address} на адрес {to_address}, хеш: {txn_hash}")
+    print(f"Отправляется {t} Matic с кошелька {account.address} на адрес {to_address}")
 
-   start_time = time.time()
-   while time.time() - start_time < MAX_WAIT_TIME:
-       time.sleep(40) # Задержка перед проверкой статуса транзакции
-       txn_receipt = w3.eth.get_transaction_receipt(txn_hash)
-       if get_transaction_status(txn_hash):
-           print(f"Транзакция {txn_hash} успешно подтверждена.")
-           break
-       else:
-           print(f"Ожидание подтверждения транзакции {txn_hash}...")
-           time.sleep(5)
+    txn = {
+        'nonce': nonce,
+        'to': to_address,
+        'value': w3.to_wei(t, 'ether'),
+        'gasPrice': gas_price_wei, # 10 Gwei
+        'gas': 41000,  
+        'chainId': 137
+    }
 
-   return txn_hash
+    remaining_balance = w3.eth.get_balance(account.address) - w3.to_wei(t, 'ether')
+    remaining_matic = w3.from_wei(remaining_balance, 'ether')
+
+    if remaining_matic < minimum_balance:
+        print(f"Оставшийся баланс меньше минимального значения {minimum_balance} Matic. Транзакция отменена.")
+        return
+
+    signed_txn = w3.eth.account.sign_transaction(txn, private_key)
+    txn_hash = w3.eth.send_raw_transaction(signed_txn.rawTransaction).hex()
+
+    print(f"Отправлена транзакция с кошелька {account.address} на адрес {to_address}, хеш: {txn_hash}")
+
+    start_time = time.time()
+    while time.time() - start_time < MAX_WAIT_TIME:
+        time.sleep(40)  # Задержка перед проверкой статуса транзакции
+        txn_receipt = w3.eth.get_transaction_receipt(txn_hash)
+        if get_transaction_status(txn_hash):
+            print(f"Транзакция {txn_hash} успешно подтверждена.")
+            break
+        else:
+            print(f"Ожидание подтверждения транзакции {txn_hash}...")
+            time.sleep(5)
+
+    return txn_hash
 
 def get_transaction_status(txn_hash):
    w3 = Web3(Web3.HTTPProvider(POLYGON_RPC))
